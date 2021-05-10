@@ -1,44 +1,108 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine. 
-# See: https://circleci.com/docs/2.0/configuration-reference
 version: 2.1
-
 orbs:
-  # The Node.js orb contains a set of prepackaged CircleCI configuration you can utilize
-  # Orbs reduce the amount of configuration required for common tasks. 
-  # See the orb documentation here: https://circleci.com/developer/orbs/orb/circleci/node
-  node: circleci/node@4.1
-
-
+    snyk: snyk/snyk@0.0.8
 jobs:
-  # Below is the definition of your job to build and test your app, you can rename and customize it as you want.
-  build-and-test:  
-    # These next lines define a Docker executor: https://circleci.com/docs/2.0/executor-types/
-    # You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
-    # A list of available CircleCI Docker Convenience Images are available here: https://circleci.com/developer/images/image/cimg/node
-    docker:
-      - image: cimg/node:15.1
-    # Then run your tests!
-    # CircleCI will report the results back to your VCS provider.
-    steps:
-      # Checkout the code as the first step.
-      - checkout
-      # Next, the node orb's install-packages step will install the dependencies from a package.json.
-      # The orb install-packages step will also automatically cache them for faster future runs.
-      - node/install-packages
-      # If you are using yarn instead npm, remove the line above and uncomment the two lines below.
-      # - node/install-packages:
-      #     pkg-manager: yarn 
-      - run:
-          name: Run tests
-          command: npm test
+    build-test-monitor:
+        docker:
+            - image: circleci/node:latest
+        steps:
+            - checkout
+            - run: npm install
+            - run: npm test
+            - snyk/scan:
+                fail-on-issues: true
+                monitor-on-build: true
+                token-variable: SNYK_TOKEN
+            - run: npx semantic-release
+            # - run: npm run pkg-binaries && cp package.json dist/
+            # - persist_to_workspace:
+            #     root: .
+            #     paths:
+            #       - dist/*
+    build-test:
+        docker:
+            - image: circleci/node:latest
+        steps:
+            - checkout
+            - run: npm install
+            - run: npm test
+            - snyk/scan:
+                fail-on-issues: true
+                monitor-on-build: false
+                token-variable: SNYK_TOKEN
+                additional-arguments: --json-file-output=snykTestResults.json
+            - run: ./snyk-prevent-gh-commit-status-linux ./snykTestResults.json ${GITHUB_TOKEN} ${CIRCLE_PROJECT_USERNAME} ${CIRCLE_PROJECT_REPONAME} ${CIRCLE_SHA1} ${CIRCLE_PULL_REQUEST} ${CIRCLE_BUILD_URL}
+            - run: npx tsc
+    build-test-from-fork:
+        docker:
+            - image: circleci/node:latest
+        steps:
+            - checkout
+            - run: npm install
+            - run: npm test
+            - run: npx tsc
 
+    # publish-github-release:
+    #     docker:
+    #       - image: gcr.io/snyk-technical-services/cicd-github
+    #         auth:
+    #           username: _json_key
+    #           password: $GCLOUD_GCR_SNYK_TS_READER
+    #     steps:
+    #       - checkout
+    #       - attach_workspace:
+    #           at: .
+    #       - run:
+    #           name: "Publish Release on GitHub"
+    #           command: |    
+    #             # VERSIONJUMP=$(git log --oneline -1 --pretty=%B | cat | grep -E 'minor|major|patch' | awk -F ':' '{print $1}')   
+    #             # VERSION=$(/workdir/nextver.sh "$VERSIONJUMP")
+    #             VERSION=$(cat /root/project/dist/package.json | grep version | awk {'print $2'} | sed 's/"//g' | sed 's/,//g')
+    #             cd /root/project/dist/binaries
+    #             sha256sum snyk-delta-linux > snyk-delta-linux.sha256 && sha256sum snyk-delta-macos > snyk-delta-macos.sha256 && sha256sum snyk-delta-win.exe > snyk-delta-win.exe.sha256
+    #             cd -
+    #             ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} ${VERSION} dist/binaries
 workflows:
-  # Below is the definition of your workflow.
-  # Inside the workflow, you provide the jobs you want to run, e.g this workflow runs the build-and-test job above.
-  # CircleCI will run this workflow on every commit.
-  # For more details on extending your workflow, see the configuration docs: https://circleci.com/docs/2.0/configuration-reference/#workflows
-  sample: 
-    jobs:
-      - build-and-test
-      # For running simple node tests, you could optionally use the node/test job from the orb to replicate and replace the job above in fewer lines.
-      # - node/test
+    version: 2.1
+    nightly:
+        triggers:
+          - schedule:
+              cron: "0 0 * * *"
+              filters:
+                branches:
+                  only:
+                    - master
+        jobs:
+            - build-test-monitor:
+                context: SNYK
+
+    build-test-monitor:
+        jobs:
+            - build-test-monitor:
+                context: SNYK
+                filters:
+                    branches:
+                        only:
+                            - master
+            # - publish-github-release:
+            #     context: SNYK
+            #     requires:
+            #         - build-test-monitor
+            #     filters:
+            #         branches:
+            #           only:
+            #             - master
+    build-test:
+        jobs:
+            - build-test:
+                context: SNYK
+                filters:
+                    branches:
+                        ignore:
+                        - master
+                        - /pull\/[0-9]+/
+            - build-test-from-fork:
+                filters:
+                    branches:
+                        only:
+                        - /pull\/[0-9]+/
