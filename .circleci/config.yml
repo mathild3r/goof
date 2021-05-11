@@ -11,7 +11,10 @@ jobs: # a collection of steps
           command: 'sudo npm install -g npm@latest'
       - run:
           name: install-snyk
-          command: 'sudo npm install -g snyk'     
+          command: 'sudo npm install -g snyk'   
+      - run:
+          name: install-snyk
+          command: 'npm i -g snyk-prevent-gh-commit-status'     
       - run: # run snyk help - test snyk is installed and working
           name: snyk-help
           command: snyk --help
@@ -26,5 +29,5 @@ jobs: # a collection of steps
           command: snyk monitor
       - run: 
           name: snyk-prevent-gh-commit-status
-          comand: npx snyk-prevent-gh-commit-status ./snykTestResults.json ${GITHUB_TOKEN} ${CIRCLE_PROJECT_USERNAME} ${CIRCLE_PROJECT_REPONAME} ${CIRCLE_SHA1} ${CIRCLE_PULL_REQUEST} ${CIRCLE_BUILD_URL}
+          comand: ./snyk-prevent-gh-commit-status-linux ./snykTestResults.json ${GITHUB_TOKEN} ${CIRCLE_PROJECT_USERNAME} ${CIRCLE_PROJECT_REPONAME} ${CIRCLE_SHA1} ${CIRCLE_PULL_REQUEST} ${CIRCLE_BUILD_URL}
       
