@@ -14,7 +14,7 @@ jobs: # a collection of steps
           command: 'sudo npm install -g snyk'   
       - run:
           name: install-snyk-prevent-gh-commit-status
-          command: 'npm i -g snyk-prevent-gh-commit-status'     
+          command: 'sudo npm i -g snyk-prevent-gh-commit-status'     
       - run: # run snyk help - test snyk is installed and working
           name: snyk-help
           command: snyk --help
